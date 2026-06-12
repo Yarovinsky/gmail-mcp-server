@@ -13,6 +13,7 @@ import { healthTool } from './health.js';
 import { gmailGetProfileTool } from './gmailGetProfile.js';
 import { gmailListLabelsTool } from './gmailListLabels.js';
 import { gmailSearchMessagesTool } from './gmailSearchMessages.js';
+import { gmailGetMessageTool } from './gmailGetMessage.js';
 
 /** Build the registry with every available tool registered. */
 export function createToolRegistry(): ToolRegistry {
@@ -21,5 +22,6 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(gmailGetProfileTool);
   registry.register(gmailListLabelsTool);
   registry.register(gmailSearchMessagesTool);
+  registry.register(gmailGetMessageTool);
   return registry;
 }

@@ -62,6 +62,12 @@ export function classifyPart(part: MessagePart): ClassifiedPart {
     filename = contentDisposition.params.filename ?? contentType.params.name ?? '';
   }
 
+  // A part with a filename but no explicit Content-Disposition is conventionally an
+  // attachment (§14.4); reflect that in the descriptor's disposition (matches §12.4).
+  if (disposition === 'unknown' && filename.length > 0) {
+    disposition = 'attachment';
+  }
+
   const rawContentId = headers.get('content-id');
   const contentId =
     rawContentId && rawContentId.length > 0 ? rawContentId.replace(/^<|>$/g, '') : undefined;
