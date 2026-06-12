@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { listLabels } from '../../../src/gmail/labels.js';
+import { listLabels, createLabel } from '../../../src/gmail/labels.js';
 import { GmailClient, type GmailApi } from '../../../src/gmail/gmailClient.js';
 
 const noWait = { sleep: async (): Promise<void> => {}, random: (): number => 0 };
@@ -99,5 +99,54 @@ describe('listLabels (§12.2, §18)', () => {
     });
     expect(result.ok).toBe(false);
     if (!result.ok) expect(result.error.code).toBe('permission_denied');
+  });
+});
+
+interface CreateCaptured {
+  body?: { name?: string; labelListVisibility?: string; messageListVisibility?: string };
+}
+
+function makeCreateClient(captured: CreateCaptured, throws?: unknown): GmailClient {
+  const api = {
+    users: {
+      labels: {
+        create: async (params: { requestBody?: CreateCaptured['body'] }) => {
+          if (throws) throw throws;
+          captured.body = params.requestBody;
+          return { data: { id: 'Label_42', name: params.requestBody?.name } };
+        },
+      },
+    },
+  } as unknown as GmailApi;
+  return new GmailClient(api, { retry: { ...noWait, maxAttempts: 2 } });
+}
+
+describe('createLabel (§12.16)', () => {
+  it('creates a label and returns its id and name', async () => {
+    const captured: CreateCaptured = {};
+    const result = await createLabel(makeCreateClient(captured), {
+      name: 'Projects/Example',
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    });
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    expect(result.value).toEqual({ id: 'Label_42', name: 'Projects/Example' });
+    expect(captured.body).toEqual({
+      name: 'Projects/Example',
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    });
+  });
+
+  it('propagates a duplicate-name conflict as an error', async () => {
+    const conflict = Object.assign(new Error('exists'), { response: { status: 409 } });
+    const result = await createLabel(makeCreateClient({}, conflict), {
+      name: 'INBOX',
+      labelListVisibility: 'labelShow',
+      messageListVisibility: 'show',
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.error.code).toBe('gmail_api_error');
   });
 });

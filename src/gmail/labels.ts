@@ -1,9 +1,11 @@
 /**
- * Gmail label listing (HLD §12.2, §18). `users.labels.list` returns the FULL label
- * set (no pagination, §18) but omits the per-label counts; those are populated by
- * `users.labels.get`, so this module fetches each filtered label's detail to fill
- * the §12.2 count fields. Detail failures degrade gracefully to zero counts rather
- * than failing the whole listing. Lives in the `gmail` layer (no MCP SDK import).
+ * Gmail label listing and creation (HLD §12.2, §12.16, §18). `users.labels.list`
+ * returns the FULL label set (no pagination, §18) but omits the per-label counts;
+ * those are populated by `users.labels.get`, so this module fetches each filtered
+ * label's detail to fill the §12.2 count fields. Detail failures degrade gracefully
+ * to zero counts rather than failing the whole listing. `createLabel` wraps
+ * `users.labels.create` for the write tool (§12.16). Lives in the `gmail` layer (no
+ * MCP SDK import).
  */
 
 import { type AppResult, ok } from '../util/result.js';
@@ -79,4 +81,48 @@ export async function listLabels(
   });
 
   return ok(labels);
+}
+
+/** Visibility of a label in the label list (Gmail `labelListVisibility`). */
+export type LabelListVisibility = 'labelShow' | 'labelShowIfUnread' | 'labelHide';
+/** Visibility of a label's messages in the message list (Gmail `messageListVisibility`). */
+export type MessageListVisibility = 'show' | 'hide';
+
+export interface CreateLabelInput {
+  name: string;
+  labelListVisibility: LabelListVisibility;
+  messageListVisibility: MessageListVisibility;
+}
+
+/** A newly created label (§12.16 output). */
+export interface CreatedLabel {
+  id: string;
+  name: string;
+}
+
+/**
+ * Create a Gmail label (§12.16). v1 is create-only — no update/delete (§9.2). A
+ * duplicate name is rejected by Gmail (surfaced as a §17 error, typically
+ * `gmail_api_error`/`invalid_input`), so a retry never produces a duplicate.
+ */
+export async function createLabel(
+  gmail: GmailClient,
+  input: CreateLabelInput,
+): Promise<AppResult<CreatedLabel>> {
+  const created = await gmail.execute({
+    label: 'users.labels.create',
+    run: (api) =>
+      api.users.labels
+        .create({
+          userId: 'me',
+          requestBody: {
+            name: input.name,
+            labelListVisibility: input.labelListVisibility,
+            messageListVisibility: input.messageListVisibility,
+          },
+        })
+        .then((r) => r.data),
+  });
+  if (!created.ok) return created;
+  return ok({ id: created.value.id ?? '', name: created.value.name ?? input.name });
 }
