@@ -14,17 +14,21 @@ import type { AppError } from '../util/result.js';
 // Type-only import: `GmailSession` is erased at build time, so this introduces no
 // runtime coupling from the MCP layer to the gmail layer (it only types the context).
 import type { GmailSession } from '../gmail/session.js';
+// Type-only import: `AuditLogger` is an interface erased at build time.
+import type { AuditLogger } from '../audit/auditLogger.js';
 import { featureDisabledError } from './errors.js';
 
 /**
  * Runtime context handed to every tool handler. `session` is the authenticated
  * Gmail session, or `null`/absent when the server is not authenticated — tools
- * that need the mailbox return `not_authenticated` in that case.
+ * that need the mailbox return `not_authenticated` in that case. `audit`, when
+ * present, receives append-only §16.5 audit records for mailbox/filesystem actions.
  */
 export interface ToolContext {
   config: Config;
   logger: Logger;
   session?: GmailSession | null;
+  audit?: AuditLogger;
 }
 
 /** The JSON object a tool returns: the §11.1/§17 envelope (`{ok:true,…}` | `{ok:false,error}`). */

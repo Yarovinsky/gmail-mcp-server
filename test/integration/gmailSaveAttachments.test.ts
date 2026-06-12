@@ -63,7 +63,15 @@ afterEach(() => {
 });
 
 function configWith(overrides: Record<string, unknown> = {}): Config {
-  const parsed = parseConfig({ downloads: { rootDir: root }, ...overrides });
+  // Merge a `downloads` override into rootDir so tests never escape to the default
+  // download root; pass through any `limits` / `safety` overrides at the top level.
+  const { downloads: downloadsOverride, ...rest } = overrides as {
+    downloads?: Record<string, unknown>;
+  } & Record<string, unknown>;
+  const parsed = parseConfig({
+    downloads: { rootDir: root, ...(downloadsOverride ?? {}) },
+    ...rest,
+  });
   if (!parsed.ok) throw new Error('config parse failed');
   return parsed.value;
 }

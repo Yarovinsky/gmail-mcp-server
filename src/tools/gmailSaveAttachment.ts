@@ -80,10 +80,33 @@ export const gmailSaveAttachmentTool = defineTool({
       policy: buildSavePolicy(context.config),
       overwrite: input.overwrite,
     });
-    if (!outcome.ok) return toErrorResponse(outcome.error);
+    const timestamp = new Date().toISOString();
+    if (!outcome.ok) {
+      context.audit?.record({
+        timestamp,
+        tool: 'gmail_save_attachment',
+        status: 'failed',
+        messageId: input.messageId,
+        filenames: [descriptor.filename],
+        size: bytes.length,
+        errorCode: outcome.error.code,
+      });
+      return toErrorResponse(outcome.error);
+    }
 
     if (outcome.value.status === 'skipped') {
       // A content-addressed duplicate already exists; report it (the file is present).
+      const sha256 = sha256Hex(bytes);
+      context.audit?.record({
+        timestamp,
+        tool: 'gmail_save_attachment',
+        status: 'skipped',
+        messageId: input.messageId,
+        filenames: [outcome.value.filename],
+        paths: [outcome.value.path],
+        sha256: [sha256],
+        size: bytes.length,
+      });
       return {
         ok: true,
         savedAttachment: {
@@ -91,7 +114,7 @@ export const gmailSaveAttachmentTool = defineTool({
           filename: outcome.value.filename,
           mimeType: descriptor.mimeType,
           size: bytes.length,
-          sha256: sha256Hex(bytes),
+          sha256,
           collisionPolicyApplied: downloads.collisionPolicy,
         },
         skipped: true,
@@ -99,6 +122,17 @@ export const gmailSaveAttachmentTool = defineTool({
       };
     }
 
-    return { ok: true, savedAttachment: outcome.value.saved };
+    const saved = outcome.value.saved;
+    context.audit?.record({
+      timestamp,
+      tool: 'gmail_save_attachment',
+      status: 'saved',
+      messageId: input.messageId,
+      filenames: [saved.filename],
+      paths: [saved.path],
+      sha256: [saved.sha256],
+      size: saved.size,
+    });
+    return { ok: true, savedAttachment: saved };
   },
 });

@@ -99,12 +99,23 @@ export const gmailGetAttachmentTool = defineTool({
       return toErrorResponse(tooLargeError(bytes.length, effectiveLimit));
     }
 
+    const sha256 = sha256Hex(bytes);
+    context.audit?.record({
+      timestamp: new Date().toISOString(),
+      tool: 'gmail_get_attachment',
+      status: 'ok',
+      messageId: input.messageId,
+      filenames: [descriptor.filename],
+      sha256: [sha256],
+      size: bytes.length,
+    });
+
     const attachment: Record<string, unknown> = {
       messageId: input.messageId,
       filename: descriptor.filename,
       mimeType: descriptor.mimeType,
       size: bytes.length,
-      sha256: sha256Hex(bytes),
+      sha256,
       dataBase64: bytes.toString('base64'),
     };
     if (descriptor.partId !== undefined) attachment.partId = descriptor.partId;

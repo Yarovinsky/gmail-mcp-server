@@ -25,6 +25,7 @@ import {
 import type { AppError } from '../util/result.js';
 import { REQUIRED_SCOPES } from '../auth/scopeGate.js';
 import { saveAttachment } from '../attachments/saveAttachment.js';
+import { sha256Hex } from '../attachments/hash.js';
 import { resolveAttachmentBytes, buildSavePolicy } from './attachmentFetch.js';
 
 interface Correlation {
@@ -110,6 +111,7 @@ export const gmailSaveAttachmentsTool = defineTool({
     }
 
     const policy = buildSavePolicy(context.config);
+    const timestamp = new Date().toISOString();
     const saved: Record<string, unknown>[] = [];
     const skipped: Record<string, unknown>[] = [];
     const failed: Record<string, unknown>[] = [];
@@ -122,14 +124,17 @@ export const gmailSaveAttachmentsTool = defineTool({
       };
 
       if (!item.attachmentId && !item.partId) {
-        failed.push({
-          ...itemIds,
-          error: errorEntry(
-            appError('invalid_input', {
-              message: 'An attachmentId or partId is required to identify the attachment.',
-            }),
-          ),
+        const error = appError('invalid_input', {
+          message: 'An attachmentId or partId is required to identify the attachment.',
         });
+        context.audit?.record({
+          timestamp,
+          tool: 'gmail_save_attachments',
+          status: 'failed',
+          messageId: item.messageId,
+          errorCode: error.code,
+        });
+        failed.push({ ...itemIds, error: errorEntry(error) });
         continue;
       }
 
@@ -139,6 +144,13 @@ export const gmailSaveAttachmentsTool = defineTool({
         partId: item.partId,
       });
       if (!resolved.ok) {
+        context.audit?.record({
+          timestamp,
+          tool: 'gmail_save_attachments',
+          status: 'failed',
+          messageId: item.messageId,
+          errorCode: resolved.error.code,
+        });
         failed.push({ ...itemIds, error: errorEntry(resolved.error) });
         continue;
       }
@@ -162,13 +174,43 @@ export const gmailSaveAttachmentsTool = defineTool({
         overwrite: input.overwrite,
       });
       if (!outcome.ok) {
+        context.audit?.record({
+          timestamp,
+          tool: 'gmail_save_attachments',
+          status: 'failed',
+          messageId: item.messageId,
+          filenames: [descriptor.filename],
+          size: bytes.length,
+          errorCode: outcome.error.code,
+        });
         failed.push({ ...corr, error: errorEntry(outcome.error) });
         continue;
       }
       if (outcome.value.status === 'skipped') {
+        context.audit?.record({
+          timestamp,
+          tool: 'gmail_save_attachments',
+          status: 'skipped',
+          messageId: item.messageId,
+          filenames: [outcome.value.filename],
+          paths: [outcome.value.path],
+          sha256: [sha256Hex(bytes)],
+          size: bytes.length,
+        });
         skipped.push({ ...corr, reason: outcome.value.reason });
       } else {
-        saved.push({ ...corr, ...outcome.value.saved });
+        const entry = outcome.value.saved;
+        context.audit?.record({
+          timestamp,
+          tool: 'gmail_save_attachments',
+          status: 'saved',
+          messageId: item.messageId,
+          filenames: [entry.filename],
+          paths: [entry.path],
+          sha256: [entry.sha256],
+          size: entry.size,
+        });
+        saved.push({ ...corr, ...entry });
       }
     }
 

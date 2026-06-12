@@ -25,6 +25,7 @@ import { authLogin, authLogout, authRevoke, authStatus } from './auth/authComman
 import { GmailClient, createGmailApi, type GoogleAuthClient } from './gmail/gmailClient.js';
 import type { GmailSession } from './gmail/session.js';
 import { buildToolGate } from './tools/gate.js';
+import { createFileAuditLogger } from './audit/auditLogger.js';
 import type { Config } from './config/config.js';
 import type { Logger } from './util/logger.js';
 
@@ -233,9 +234,10 @@ async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<numb
 
   const logger = createLogger({ level: config.logging.level });
   const session = buildSession(config, logger);
+  const audit = createFileAuditLogger(config.logging.auditLogPath, logger);
   const registry = createToolRegistry();
   const gate = buildToolGate(config, session?.grantedScopes ?? [], session !== null);
-  const server = buildMcpServer({ registry, context: { config, logger, session }, gate });
+  const server = buildMcpServer({ registry, context: { config, logger, session, audit }, gate });
   await server.connect(transport);
   logger.info(
     { transport: kind, tools: registry.size, authenticated: session !== null },
