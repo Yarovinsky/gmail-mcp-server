@@ -18,6 +18,7 @@ import { gmailGetThreadTool } from './gmailGetThread.js';
 import { gmailListAttachmentsTool } from './gmailListAttachments.js';
 import { gmailGetAttachmentTool } from './gmailGetAttachment.js';
 import { gmailSaveAttachmentTool } from './gmailSaveAttachment.js';
+import { gmailSaveAttachmentsTool } from './gmailSaveAttachments.js';
 
 /** Build the registry with every available tool registered. */
 export function createToolRegistry(): ToolRegistry {
@@ -31,5 +32,6 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(gmailListAttachmentsTool);
   registry.register(gmailGetAttachmentTool);
   registry.register(gmailSaveAttachmentTool);
+  registry.register(gmailSaveAttachmentsTool);
   return registry;
 }
