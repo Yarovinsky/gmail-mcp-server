@@ -24,6 +24,7 @@ import { gmailListDraftsTool } from './gmailListDrafts.js';
 import { gmailSendDraftTool } from './gmailSendDraft.js';
 import { gmailSendMessageTool } from './gmailSendMessage.js';
 import { gmailModifyMessageLabelsTool } from './gmailModifyMessageLabels.js';
+import { gmailTrashMessagesTool } from './gmailTrashMessages.js';
 
 /** Build the registry with every available tool registered. */
 export function createToolRegistry(): ToolRegistry {
@@ -43,5 +44,6 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(gmailSendDraftTool);
   registry.register(gmailSendMessageTool);
   registry.register(gmailModifyMessageLabelsTool);
+  registry.register(gmailTrashMessagesTool);
   return registry;
 }
