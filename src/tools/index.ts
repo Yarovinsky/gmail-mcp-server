@@ -11,11 +11,13 @@
 import { ToolRegistry } from '../mcp/toolRegistry.js';
 import { healthTool } from './health.js';
 import { gmailGetProfileTool } from './gmailGetProfile.js';
+import { gmailListLabelsTool } from './gmailListLabels.js';
 
 /** Build the registry with every available tool registered. */
 export function createToolRegistry(): ToolRegistry {
   const registry = new ToolRegistry();
   registry.register(healthTool);
   registry.register(gmailGetProfileTool);
+  registry.register(gmailListLabelsTool);
   return registry;
 }
