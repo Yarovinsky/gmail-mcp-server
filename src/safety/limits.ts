@@ -1,8 +1,13 @@
 /**
- * Response-size bounding (HLD §11.1, §22.1 #18). The total serialized size of any
- * tool response is bounded by `toolResponseBodyCharLimit`; an over-limit response
- * is replaced by a truncated envelope flagged `truncated: true` and is never
- * silently cut. (Per-message body caps are added in Step 4.4.)
+ * Response-size bounding and per-message body caps (HLD §11.1, §12.4, §22.1 #18–#19).
+ *
+ * Two independent limits apply to read responses:
+ *  - {@link boundToolResponse}: the TOTAL serialized response is bounded by
+ *    `toolResponseBodyCharLimit`; an over-limit response is replaced by a truncated
+ *    envelope flagged `truncated: true` and is never silently cut (§22.1 #18).
+ *  - {@link resolveBodyCharLimit} / {@link capMessageBody}: a per-message body is
+ *    bounded by the per-call `maxBodyCharsPerMessage`, itself capped at the config
+ *    `maxMessageBodyChars`; truncation sets `body.truncated = true` (§12.4, §22.1 #19).
  */
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -60,4 +65,44 @@ export function boundToolResponse(result: Record<string, unknown>, limit: number
   }
 
   return { result: envelope, serialized: JSON.stringify(envelope), truncated: true };
+}
+
+/** The §12.4 message `body` object: text/html (either may be null) plus a truncation flag. */
+export interface MessageBody {
+  text: string | null;
+  html: string | null;
+  truncated: boolean;
+}
+
+/**
+ * Resolve the effective per-message body character limit (§12.4, §22.1 #19): the
+ * per-call `maxBodyCharsPerMessage` capped at the configured `maxMessageBodyChars`.
+ * A missing or non-positive request falls back to the config maximum.
+ */
+export function resolveBodyCharLimit(requested: number | undefined, configMax: number): number {
+  if (requested === undefined || !Number.isFinite(requested) || requested <= 0) {
+    return configMax;
+  }
+  return Math.min(Math.floor(requested), configMax);
+}
+
+/**
+ * Cap a message's text/html bodies to `limit` characters, producing the §12.4
+ * `body` object. Truncation is FLAGGED (`truncated: true`), never silent (§22.1 #19);
+ * `null`/absent inputs are preserved as `null` (e.g. the unrequested body format).
+ */
+export function capMessageBody(
+  input: { text?: string | null; html?: string | null },
+  limit: number,
+): MessageBody {
+  let truncated = false;
+  const cap = (value: string | null | undefined): string | null => {
+    if (value === null || value === undefined) return null;
+    if (value.length > limit) {
+      truncated = true;
+      return value.slice(0, limit);
+    }
+    return value;
+  };
+  return { text: cap(input.text), html: cap(input.html), truncated };
 }
