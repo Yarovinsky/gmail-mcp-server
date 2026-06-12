@@ -14,6 +14,7 @@ import { gmailGetProfileTool } from './gmailGetProfile.js';
 import { gmailListLabelsTool } from './gmailListLabels.js';
 import { gmailSearchMessagesTool } from './gmailSearchMessages.js';
 import { gmailGetMessageTool } from './gmailGetMessage.js';
+import { gmailGetThreadTool } from './gmailGetThread.js';
 
 /** Build the registry with every available tool registered. */
 export function createToolRegistry(): ToolRegistry {
@@ -23,5 +24,6 @@ export function createToolRegistry(): ToolRegistry {
   registry.register(gmailListLabelsTool);
   registry.register(gmailSearchMessagesTool);
   registry.register(gmailGetMessageTool);
+  registry.register(gmailGetThreadTool);
   return registry;
 }

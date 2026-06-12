@@ -12,8 +12,9 @@ import { defineTool } from '../mcp/toolRegistry.js';
 import { featureDisabledError, notAuthenticatedError, toErrorResponse } from '../mcp/errors.js';
 import { REQUIRED_SCOPES } from '../auth/scopeGate.js';
 import { internalDateToIso } from '../util/date.js';
-import { capMessageBody, resolveBodyCharLimit } from '../safety/limits.js';
+import { resolveBodyCharLimit } from '../safety/limits.js';
 import { fetchMessage, gmailApiFormat, parseGmailMessage } from '../gmail/messages.js';
+import { selectBody, wantsHtml } from './messageBody.js';
 
 export const gmailGetMessageTool = defineTool({
   name: 'gmail_get_message',
@@ -89,24 +90,20 @@ export const gmailGetMessageTool = defineTool({
     }
 
     // parsed | full
-    const htmlWanted = input.bodyFormat === 'html' || input.bodyFormat === 'both';
-    const textWanted = input.bodyFormat === 'text' || input.bodyFormat === 'both';
     const fetched = await fetchMessage(gmail, input.messageId, gmailApiFormat(input.format));
     if (!fetched.ok) return toErrorResponse(fetched.error);
 
     const view = parseGmailMessage(fetched.value, {
-      includeHtml: htmlWanted,
+      includeHtml: wantsHtml(input.bodyFormat),
       includeInline: downloads.includeInlineAttachmentsByDefault,
     });
 
-    let body: ReturnType<typeof capMessageBody> | null = null;
-    if (input.includeBody) {
-      const limit = resolveBodyCharLimit(input.maxBodyCharsPerMessage, limits.maxMessageBodyChars);
-      body = capMessageBody(
-        { text: textWanted ? view.text : null, html: htmlWanted ? view.html : null },
-        limit,
-      );
-    }
+    const limit = resolveBodyCharLimit(input.maxBodyCharsPerMessage, limits.maxMessageBodyChars);
+    const body = selectBody(view, {
+      include: input.includeBody,
+      bodyFormat: input.bodyFormat,
+      limit,
+    });
 
     const message: Record<string, unknown> = {
       id: view.id,
