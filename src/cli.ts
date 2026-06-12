@@ -1,8 +1,8 @@
 /**
- * CLI entrypoint logic (HLD §20). This step implements the non-auth subset:
- * `--help`/`--version`, `config init`, `config show`, a `doctor` stub (full checks
- * land in Step 6.9), and `start` (stdio now; http arrives in Step 7.4). The `auth`
- * subcommands are listed in help and wired as placeholders until Step 3.5.
+ * CLI entrypoint logic (HLD §20). Implements `--help`/`--version`, `config init`,
+ * `config show`, a `doctor` stub (full checks land in Step 6.9), `start` (stdio
+ * now; http arrives in Step 7.4), and the `auth login | status | logout | revoke`
+ * subcommands (§9.2, §9.4).
  *
  * `runCli` takes injectable IO/home/cwd/env so it is testable without touching the
  * real home directory or process streams.
@@ -18,6 +18,10 @@ import { createToolRegistry } from './tools/index.js';
 import { createLogger } from './util/logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { createServerTransport } from './mcp/transport.js';
+import { TokenStore, tokensDirFromTokenPath } from './auth/tokenStore.js';
+import { OAuthClient, loadCredentials } from './auth/oauthClient.js';
+import { expandScopeProfile } from './auth/scopeProfiles.js';
+import { authLogin, authLogout, authRevoke, authStatus } from './auth/authCommands.js';
 
 /** Current CLI/server version. Keep in sync with package.json on release. */
 export const VERSION = '0.1.0';
@@ -202,14 +206,76 @@ async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<numb
   return 0;
 }
 
-function cmdAuth(sub: string | undefined, deps: CliDeps): number {
-  const { err } = resolveDeps(deps);
-  // Placeholder until Step 3.5 wires the real auth commands.
-  err(
-    `auth ${sub ?? ''}: authentication is not available yet (implemented in a later step). ` +
-      'Run "gmail-mcp-server --help" for available commands.',
-  );
-  return 1;
+async function cmdAuth(
+  sub: string | undefined,
+  flags: ParsedArgs['flags'],
+  deps: CliDeps,
+): Promise<number> {
+  const { out, err } = resolveDeps(deps);
+  const configResult = loadConfig(loadOptions(deps));
+  if (!configResult.ok) {
+    err(`Failed to load config: ${configResult.error.message}`);
+    return 1;
+  }
+  const config = configResult.value;
+  const profile = config.activeProfile;
+  const logger = createLogger({ level: config.logging.level });
+  const store = new TokenStore({
+    tokensDir: tokensDirFromTokenPath(config.oauth.tokenPath),
+    logger,
+  });
+  const io = { out, err };
+
+  switch (sub) {
+    case 'status':
+      return authStatus({ store, profile, io });
+    case 'logout':
+      return authLogout({ store, profile, io });
+    case 'login': {
+      const credResult = loadCredentials(config.oauth.credentialsPath);
+      if (!credResult.ok) {
+        err(credResult.error.message);
+        return 1;
+      }
+      const oauth = new OAuthClient(credResult.value, { logger });
+
+      let scopes = config.oauth.scopes;
+      const scopeProfile = flags.get('scope-profile');
+      if (typeof scopeProfile === 'string') {
+        const expanded = expandScopeProfile(scopeProfile);
+        if (!expanded.ok) {
+          err(expanded.error.message);
+          return 1;
+        }
+        scopes = expanded.value;
+      }
+
+      return authLogin({
+        oauth,
+        store,
+        profile,
+        scopes,
+        io,
+        fetchEmail: (token) => oauth.getProfileEmail(token),
+      });
+    }
+    case 'revoke': {
+      const credResult = loadCredentials(config.oauth.credentialsPath);
+      if (!credResult.ok) {
+        // Without credentials we cannot reach Google's revocation endpoint, but we
+        // must still remove the local token so it is not left behind (§9.4).
+        err(
+          `Cannot reach Google to revoke (${credResult.error.message}); removing local token only.`,
+        );
+        return authLogout({ store, profile, io });
+      }
+      const oauth = new OAuthClient(credResult.value, { logger });
+      return authRevoke({ store, oauth, profile, io });
+    }
+    default:
+      err(`Unknown auth subcommand: ${sub ?? '(none)'}. Use login | status | logout | revoke.`);
+      return 1;
+  }
 }
 
 /** Run the CLI, returning a process exit code. */
@@ -235,7 +301,7 @@ export async function runCli(argv: string[], deps: CliDeps = {}): Promise<number
     case 'start':
       return cmdStart(flags, deps);
     case 'auth':
-      return cmdAuth(positionals[1], deps);
+      return cmdAuth(positionals[1], flags, deps);
     default:
       err(`Unknown command: ${command}`);
       printHelp(err);

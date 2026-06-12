@@ -12,7 +12,11 @@ import { type AppResult, ok } from '../util/result.js';
 import { appError, notAuthenticatedError } from '../mcp/errors.js';
 import type { Logger } from '../util/logger.js';
 
-/** Stored OAuth credentials (mirrors google-auth-library `Credentials`). */
+/**
+ * Stored OAuth credentials (mirrors google-auth-library `Credentials`), plus an
+ * optional `email` we capture at login time so `auth status` can show the
+ * authenticated mailbox offline. Unknown fields are ignored by the google client.
+ */
 export interface StoredToken {
   access_token?: string;
   refresh_token?: string;
@@ -20,6 +24,8 @@ export interface StoredToken {
   token_type?: string;
   expiry_date?: number;
   id_token?: string;
+  /** Authenticated mailbox address, captured at login (not a Google field). */
+  email?: string;
 }
 
 export interface TokenStoreOptions {

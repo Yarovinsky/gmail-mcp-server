@@ -188,6 +188,32 @@ export class OAuthClient {
     }
   }
 
+  /**
+   * Fetch the authenticated mailbox's email address via Gmail `users.getProfile`.
+   * Used by `auth login` to capture the email for `auth status`. Only meaningful
+   * with the real google client; tests inject the email fetcher instead.
+   */
+  async getProfileEmail(token: StoredToken): Promise<AppResult<string>> {
+    try {
+      const client = this.make(this.defaultRedirectUri());
+      client.setCredentials(token);
+      const gmail = google.gmail({
+        version: 'v1',
+        auth: client as unknown as InstanceType<typeof google.auth.OAuth2>,
+      });
+      const response = await gmail.users.getProfile({ userId: 'me' });
+      const email = response.data.emailAddress;
+      if (!email) {
+        return err(
+          appError('gmail_api_error', { message: 'Gmail profile returned no email address.' }),
+        );
+      }
+      return ok(email);
+    } catch (error) {
+      return err(fromGmailApiError(error));
+    }
+  }
+
   /** Revoke a token with Google (best effort). */
   async revoke(token: StoredToken): Promise<AppResult<void>> {
     const value = token.access_token ?? token.refresh_token;

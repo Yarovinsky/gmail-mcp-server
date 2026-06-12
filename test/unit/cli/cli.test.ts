@@ -126,12 +126,65 @@ describe('start', () => {
   });
 });
 
-describe('unknown command and auth placeholder', () => {
+describe('unknown command', () => {
   it('returns 1 for an unknown command', async () => {
     expect(await runCli(['frobnicate'], deps())).toBe(1);
   });
+});
 
-  it('auth subcommands are placeholders for now', async () => {
-    expect(await runCli(['auth', 'status'], deps())).toBe(1);
+describe('auth wiring (§9.2, §9.4)', () => {
+  function tokenFile(): string {
+    return path.join(home, '.gmail-mcp', 'tokens', 'default.json');
+  }
+
+  it('auth status returns 1 (not_authenticated) when no token is stored', async () => {
+    const code = await runCli(['auth', 'status'], deps());
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/auth login/);
+  });
+
+  it('auth login without credentials.json fails with a clear message', async () => {
+    const code = await runCli(['auth', 'login'], deps());
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/credentials/i);
+  });
+
+  it('auth login with an unknown --scope-profile fails before touching the browser', async () => {
+    // Provide a credentials.json so the failure is attributable to the bad profile.
+    const credPath = path.join(home, '.gmail-mcp', 'credentials.json');
+    fs.mkdirSync(path.dirname(credPath), { recursive: true });
+    fs.writeFileSync(
+      credPath,
+      JSON.stringify({ installed: { client_id: 'a', client_secret: 'b' } }),
+      'utf8',
+    );
+    const code = await runCli(['auth', 'login', '--scope-profile', 'bogus'], deps());
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/Unknown scope profile/);
+  });
+
+  it('auth logout removes the local token file and returns 0', async () => {
+    const file = tokenFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ refresh_token: '1//x' }), 'utf8');
+    expect(fs.existsSync(file)).toBe(true);
+
+    const code = await runCli(['auth', 'logout'], deps());
+    expect(code).toBe(0);
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('auth revoke without credentials still removes the local token', async () => {
+    const file = tokenFile();
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, JSON.stringify({ refresh_token: '1//x' }), 'utf8');
+
+    const code = await runCli(['auth', 'revoke'], deps());
+    expect(code).toBe(0);
+    expect(fs.existsSync(file)).toBe(false);
+  });
+
+  it('rejects an unknown auth subcommand', async () => {
+    expect(await runCli(['auth', 'frobnicate'], deps())).toBe(1);
   });
 });
