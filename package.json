@@ -1,6 +1,6 @@
 {
   "name": "gmail-mcp-server",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "description": "A Model Context Protocol (MCP) server for Gmail with configurable OAuth scopes, message search, email reading, labels, drafts, and attachment download support.",
   "type": "module",
   "bin": {

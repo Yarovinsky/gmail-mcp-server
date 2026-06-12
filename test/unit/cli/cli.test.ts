@@ -252,10 +252,27 @@ describe('start', () => {
     expect(kind).toBe('http');
   });
 
-  it('errors (without hanging) when http transport is requested for real', async () => {
-    const code = await runCli(['start', '--transport', 'http'], deps());
+  it('refuses (without hanging) to bind HTTP to the 0.0.0.0 wildcard (§8.2)', async () => {
+    const code = await runCli(
+      ['start', '--transport', 'http', '--host', '0.0.0.0', '--port', '3333'],
+      deps(),
+    );
     expect(code).toBe(1);
-    expect(err.join('\n')).toMatch(/HTTP transport is not implemented/);
+    expect(err.join('\n')).toMatch(/wildcard/i);
+    expect(err.join('\n')).toMatch(/127\.0\.0\.1/);
+  });
+
+  it('refuses (without hanging) to bind HTTP to a non-loopback host (§8.2)', async () => {
+    const code = await runCli(['start', '--transport', 'http', '--host', '192.168.1.50'], deps());
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/non-loopback/i);
+    expect(err.join('\n')).toMatch(/TLS/);
+  });
+
+  it('rejects (without hanging) a malformed --port', async () => {
+    const code = await runCli(['start', '--transport', 'http', '--port', 'abc'], deps());
+    expect(code).toBe(1);
+    expect(err.join('\n')).toMatch(/port/i);
   });
 });
 

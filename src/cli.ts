@@ -1,8 +1,8 @@
 /**
  * CLI entrypoint logic (HLD §20). Implements `--help`/`--version`, `config init`,
- * `config show`, `doctor` (the full 7-point §20 diagnostic), `start` (stdio now; http
- * arrives in Step 7.4), and the `auth login | status | logout | revoke` subcommands
- * (§9.2, §9.4).
+ * `config show`, `doctor` (the full 7-point §20 diagnostic), `start` (stdio by default,
+ * plus the optional local-only `--transport http --host --port` mode of §8.2), and the
+ * `auth login | status | logout | revoke` subcommands (§9.2, §9.4).
  *
  * `runCli` takes injectable IO/home/cwd/env so it is testable without touching the
  * real home directory or process streams.
@@ -17,7 +17,7 @@ import type { TransportKind } from './config/config.js';
 import { createToolRegistry } from './tools/index.js';
 import { createLogger, createSilentLogger } from './util/logger.js';
 import { buildMcpServer } from './mcp/server.js';
-import { createServerTransport } from './mcp/transport.js';
+import { createServerTransport, resolveHttpBinding, serveHttp } from './mcp/transport.js';
 import { TokenStore, tokensDirFromTokenPath } from './auth/tokenStore.js';
 import { OAuthClient, loadCredentials, parseGrantedScopes } from './auth/oauthClient.js';
 import { expandScopeProfile } from './auth/scopeProfiles.js';
@@ -30,7 +30,7 @@ import type { Config } from './config/config.js';
 import type { Logger } from './util/logger.js';
 
 /** Current CLI/server version. Keep in sync with package.json on release. */
-export const VERSION = '0.3.0';
+export const VERSION = '0.4.0';
 
 export interface CliDeps {
   stdout?: (line: string) => void;
@@ -71,6 +71,11 @@ function parseArgs(argv: string[]): ParsedArgs {
     }
   }
   return { positionals, flags };
+}
+
+/** A flag's string value, or undefined when absent or passed as a bare boolean flag. */
+function flagString(value: string | boolean | undefined): string | undefined {
+  return typeof value === 'string' ? value : undefined;
 }
 
 const HELP = `gmail-mcp-server — a configurable MCP server for Gmail
@@ -444,12 +449,19 @@ async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<numb
     return deps.startHook(kind);
   }
 
-  let transport;
-  try {
-    transport = createServerTransport(kind);
-  } catch (error) {
-    err(error instanceof Error ? error.message : String(error));
-    return 1;
+  // Validate the HTTP binding (host/port) up front so a bad address fails fast and
+  // never reaches the safe-by-default §8.2 listener.
+  let binding;
+  if (kind === 'http') {
+    const resolved = resolveHttpBinding({
+      host: flagString(flags.get('host')),
+      port: flagString(flags.get('port')),
+    });
+    if (!resolved.ok) {
+      err(resolved.error.message);
+      return 1;
+    }
+    binding = resolved.value;
   }
 
   const logger = createLogger({ level: config.logging.level });
@@ -457,15 +469,41 @@ async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<numb
   const audit = createFileAuditLogger(config.logging.auditLogPath, logger);
   const registry = createToolRegistry();
   const gate = buildToolGate(config, session?.grantedScopes ?? [], session !== null);
-  const server = buildMcpServer({ registry, context: { config, logger, session, audit }, gate });
-  await server.connect(transport);
-  logger.info(
-    { transport: kind, tools: registry.size, authenticated: session !== null },
-    'gmail-mcp-server started',
-  );
+  const buildServer = (): ReturnType<typeof buildMcpServer> =>
+    buildMcpServer({ registry, context: { config, logger, session, audit }, gate });
 
-  // Keep the process alive; the stdio transport drives requests until the client
-  // disconnects or the process is signalled.
+  if (binding) {
+    let handle;
+    try {
+      // Each HTTP session gets its own MCP server instance (§8.2 stateful mode).
+      handle = await serveHttp(buildServer, binding);
+    } catch (error) {
+      err(
+        `Failed to start HTTP transport: ${error instanceof Error ? error.message : String(error)}`,
+      );
+      return 1;
+    }
+    const addr = handle.address() ?? binding;
+    logger.info(
+      {
+        transport: 'http',
+        host: addr.host,
+        port: addr.port,
+        tools: registry.size,
+        authenticated: session !== null,
+      },
+      'gmail-mcp-server started (HTTP)',
+    );
+  } else {
+    await buildServer().connect(createServerTransport('stdio'));
+    logger.info(
+      { transport: 'stdio', tools: registry.size, authenticated: session !== null },
+      'gmail-mcp-server started',
+    );
+  }
+
+  // Keep the process alive; the transport (stdio reader or HTTP listener) drives
+  // requests until the client disconnects or the process is signalled.
   await new Promise<void>(() => {});
   return 0;
 }
