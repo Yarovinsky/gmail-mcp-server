@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gmail": {
+      "command": "gmail-mcp-server",
+      "args": ["start", "--transport", "stdio"]
+    }
+  }
+}

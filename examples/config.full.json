@@ -1,0 +1,64 @@
+{
+  "activeProfile": "default",
+  "transport": "stdio",
+  "oauth": {
+    "credentialsPath": "~/.gmail-mcp/credentials.json",
+    "tokenPath": "~/.gmail-mcp/tokens/default.json",
+    "scopes": ["https://mail.google.com/"]
+  },
+  "features": {
+    "profile": true,
+    "labels": true,
+    "labelsWrite": true,
+    "search": true,
+    "readMessages": true,
+    "readThreads": true,
+    "attachments": true,
+    "drafts": true,
+    "send": true,
+    "modify": true,
+    "history": true
+  },
+  "limits": {
+    "defaultPageSize": 10,
+    "maxPageSize": 100,
+    "maxMessageBodyChars": 20000,
+    "maxAttachmentBytes": 52428800,
+    "maxBulkDownloadCount": 50,
+    "toolResponseBodyCharLimit": 50000
+  },
+  "downloads": {
+    "enabled": true,
+    "rootDir": "~/Downloads/gmail-mcp",
+    "preserveOriginalFilenames": true,
+    "collisionPolicy": "append-counter",
+    "allowedMimeTypes": [],
+    "blockedExtensions": [
+      ".exe",
+      ".dll",
+      ".bat",
+      ".cmd",
+      ".ps1",
+      ".vbs",
+      ".js",
+      ".scr",
+      ".com",
+      ".jar",
+      ".msi"
+    ],
+    "includeInlineAttachmentsByDefault": false
+  },
+  "safety": {
+    "requireConfirmationForSend": true,
+    "requireConfirmationForModify": true,
+    "requireConfirmationForBulkDownload": true,
+    "bulkDownloadConfirmationThreshold": 10,
+    "redactAccessTokensInLogs": true,
+    "disableRawHtmlBodyByDefault": true,
+    "allowRawMessage": false
+  },
+  "logging": {
+    "level": "info",
+    "auditLogPath": "~/.gmail-mcp/audit.jsonl"
+  }
+}
