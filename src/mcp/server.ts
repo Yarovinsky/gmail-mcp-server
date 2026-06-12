@@ -21,7 +21,7 @@ import { internalError, toErrorResponse } from './errors.js';
 import { boundToolResponse } from '../safety/limits.js';
 
 /** Default server identity advertised to MCP clients. */
-const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '0.2.0' };
+const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '0.3.0' };
 
 export interface BuildServerOptions {
   registry: ToolRegistry;
