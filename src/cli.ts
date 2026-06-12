@@ -1,8 +1,8 @@
 /**
  * CLI entrypoint logic (HLD §20). Implements `--help`/`--version`, `config init`,
- * `config show`, a `doctor` stub (full checks land in Step 6.9), `start` (stdio
- * now; http arrives in Step 7.4), and the `auth login | status | logout | revoke`
- * subcommands (§9.2, §9.4).
+ * `config show`, `doctor` (the full 7-point §20 diagnostic), `start` (stdio now; http
+ * arrives in Step 7.4), and the `auth login | status | logout | revoke` subcommands
+ * (§9.2, §9.4).
  *
  * `runCli` takes injectable IO/home/cwd/env so it is testable without touching the
  * real home directory or process streams.
@@ -15,7 +15,7 @@ import { defaultConfig } from './config/configSchema.js';
 import { homeConfigPath } from './config/paths.js';
 import type { TransportKind } from './config/config.js';
 import { createToolRegistry } from './tools/index.js';
-import { createLogger } from './util/logger.js';
+import { createLogger, createSilentLogger } from './util/logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { createServerTransport } from './mcp/transport.js';
 import { TokenStore, tokensDirFromTokenPath } from './auth/tokenStore.js';
@@ -161,19 +161,239 @@ function cmdConfig(sub: string | undefined, flags: ParsedArgs['flags'], deps: Cl
   }
 }
 
+/** The minimum supported Node major version (kept in sync with package.json engines). */
+export const MIN_NODE_MAJOR = 18;
+
+/** A single `doctor` diagnostic result. `fail` makes `doctor` exit non-zero. */
+export type DoctorStatus = 'ok' | 'warn' | 'fail';
+export interface DoctorCheck {
+  name: string;
+  status: DoctorStatus;
+  detail: string;
+}
+
+/** State the doctor checks reason over (gathered with side effects, then judged purely). */
+export interface DoctorContext {
+  nodeVersion: string;
+  config: Config | null;
+  configError?: string;
+  credentialsExists: boolean;
+  tokenExists: boolean;
+  /** Granted scopes from the stored token, or null when there is no token. */
+  grantedScopes: string[] | null;
+  downloadRoot?: { enabled: boolean; path: string; exists: boolean; writable: boolean };
+  /** Names of enabled features whose tools no granted scope authorizes. */
+  featureScopeMismatches: string[];
+}
+
+function nodeMajor(version: string): number {
+  const match = /^v?(\d+)/.exec(version);
+  return match ? Number(match[1]) : 0;
+}
+
+/**
+ * Turn a gathered {@link DoctorContext} into the §20 seven-point check list. Pure and
+ * side-effect-free so it is fully unit-testable; the I/O (config load, fs, token read)
+ * happens in {@link cmdDoctor} which builds the context.
+ */
+export function buildDoctorChecks(ctx: DoctorContext): DoctorCheck[] {
+  const checks: DoctorCheck[] = [];
+
+  // 1. Node version.
+  const major = nodeMajor(ctx.nodeVersion);
+  checks.push(
+    major >= MIN_NODE_MAJOR
+      ? { name: 'node', status: 'ok', detail: `${ctx.nodeVersion} (>= v${MIN_NODE_MAJOR}).` }
+      : {
+          name: 'node',
+          status: 'fail',
+          detail: `${ctx.nodeVersion} is below the required Node >= v${MIN_NODE_MAJOR}. Upgrade Node.`,
+        },
+  );
+
+  // 2. Config validity. Without a valid config nothing else is reliable.
+  if (!ctx.config) {
+    checks.push({
+      name: 'config',
+      status: 'fail',
+      detail: `Invalid configuration: ${ctx.configError ?? 'unknown error'}. Fix it or run \`config init\`.`,
+    });
+    return checks;
+  }
+  checks.push({
+    name: 'config',
+    status: 'ok',
+    detail: `Valid (transport=${ctx.config.transport}, profile=${ctx.config.activeProfile}).`,
+  });
+
+  // 3. Credentials file exists.
+  checks.push(
+    ctx.credentialsExists
+      ? { name: 'credentials', status: 'ok', detail: `Found: ${ctx.config.oauth.credentialsPath}.` }
+      : {
+          name: 'credentials',
+          status: 'fail',
+          detail: `Missing OAuth credentials at ${ctx.config.oauth.credentialsPath}. Create a Desktop App OAuth client in Google Cloud and save it there.`,
+        },
+  );
+
+  // 4. Token file exists or auth needed.
+  checks.push(
+    ctx.tokenExists
+      ? {
+          name: 'token',
+          status: 'ok',
+          detail: `Token present for profile '${ctx.config.activeProfile}'.`,
+        }
+      : {
+          name: 'token',
+          status: 'warn',
+          detail: `No token for profile '${ctx.config.activeProfile}'. Run \`gmail-mcp-server auth login\`.`,
+        },
+  );
+
+  // 5. Token scopes.
+  if (ctx.grantedScopes && ctx.grantedScopes.length > 0) {
+    checks.push({
+      name: 'scopes',
+      status: 'ok',
+      detail: `Granted: ${ctx.grantedScopes.join(', ')}.`,
+    });
+  } else if (ctx.tokenExists) {
+    checks.push({
+      name: 'scopes',
+      status: 'warn',
+      detail: 'Token has no recorded scopes; re-run `auth login`.',
+    });
+  } else {
+    checks.push({ name: 'scopes', status: 'warn', detail: 'Unknown until you authenticate.' });
+  }
+
+  // 6. Download root exists/writable if downloads enabled.
+  const dr = ctx.downloadRoot;
+  if (!dr || !dr.enabled) {
+    checks.push({
+      name: 'downloads',
+      status: 'ok',
+      detail: 'Downloads disabled (downloads.enabled=false).',
+    });
+  } else if (dr.exists && dr.writable) {
+    checks.push({ name: 'downloads', status: 'ok', detail: `Writable: ${dr.path}.` });
+  } else if (!dr.exists) {
+    checks.push({
+      name: 'downloads',
+      status: 'warn',
+      detail: `Download root does not exist yet (created on first save): ${dr.path}.`,
+    });
+  } else {
+    checks.push({
+      name: 'downloads',
+      status: 'fail',
+      detail: `Download root is not writable: ${dr.path}. Fix permissions or change downloads.rootDir.`,
+    });
+  }
+
+  // 7. Feature flags match granted scopes.
+  if (!ctx.grantedScopes) {
+    checks.push({
+      name: 'feature-scopes',
+      status: 'warn',
+      detail: 'Cannot verify feature/scope alignment until you authenticate.',
+    });
+  } else if (ctx.featureScopeMismatches.length === 0) {
+    checks.push({
+      name: 'feature-scopes',
+      status: 'ok',
+      detail: 'Enabled features are authorized by the granted scopes.',
+    });
+  } else {
+    checks.push({
+      name: 'feature-scopes',
+      status: 'warn',
+      detail: `Enabled but not authorized by the granted scopes: ${ctx.featureScopeMismatches.join(', ')}. Re-run \`auth login\` with broader scopes, or disable these features.`,
+    });
+  }
+
+  return checks;
+}
+
+/**
+ * Names of enabled features whose tools NONE of the granted scopes authorize. Derived
+ * from the live tool registry so the per-tool §12 scope map stays the single source of
+ * truth (§9.3).
+ */
+export function featureScopeMismatches(config: Config, granted: readonly string[]): string[] {
+  const grantedSet = new Set(granted);
+  const mismatches = new Set<string>();
+  for (const tool of createToolRegistry().list()) {
+    const feature = tool.feature;
+    if (!feature || !config.features[feature]) continue;
+    const required = tool.requiredScopesAnyOf;
+    if (!required || required.length === 0) continue;
+    if (!required.some((scope) => grantedSet.has(scope))) {
+      mismatches.add(feature);
+    }
+  }
+  return [...mismatches];
+}
+
+/** Probe the (already `~`-expanded) download root for existence and writability. */
+function probeDownloadRoot(config: Config): DoctorContext['downloadRoot'] {
+  const dirPath = config.downloads.rootDir;
+  if (!config.downloads.enabled) {
+    return { enabled: false, path: dirPath, exists: false, writable: false };
+  }
+  try {
+    fs.accessSync(dirPath, fs.constants.W_OK);
+    return { enabled: true, path: dirPath, exists: true, writable: true };
+  } catch {
+    return { enabled: true, path: dirPath, exists: fs.existsSync(dirPath), writable: false };
+  }
+}
+
 function cmdDoctor(deps: CliDeps): number {
   const { out } = resolveDeps(deps);
-  // Stub (full 7-point checks land in Step 6.9). Report node version and config validity.
-  out(`gmail-mcp-server doctor (v${VERSION})`);
-  out(`  node version: ${process.version}`);
-  const result = loadConfig(loadOptions(deps));
-  if (result.ok) {
-    out(`  config: OK (transport=${result.value.transport})`);
-    out('  note: full credential/token/scope checks arrive in a later step.');
-    return 0;
+  const configResult = loadConfig(loadOptions(deps));
+  const config = configResult.ok ? configResult.value : null;
+
+  let credentialsExists = false;
+  let tokenExists = false;
+  let grantedScopes: string[] | null = null;
+  let downloadRoot: DoctorContext['downloadRoot'];
+  let mismatches: string[] = [];
+
+  if (config) {
+    credentialsExists = loadCredentials(config.oauth.credentialsPath).ok;
+    const store = new TokenStore({
+      tokensDir: tokensDirFromTokenPath(config.oauth.tokenPath),
+      logger: createSilentLogger(),
+    });
+    const token = store.load(config.activeProfile);
+    tokenExists = token.ok;
+    if (token.ok) grantedScopes = parseGrantedScopes(token.value);
+    downloadRoot = probeDownloadRoot(config);
+    if (grantedScopes) mismatches = featureScopeMismatches(config, grantedScopes);
   }
-  out(`  config: INVALID — ${result.error.message}`);
-  return 1;
+
+  const ctx: DoctorContext = {
+    nodeVersion: process.version,
+    config,
+    credentialsExists,
+    tokenExists,
+    grantedScopes,
+    featureScopeMismatches: mismatches,
+  };
+  if (!configResult.ok) ctx.configError = configResult.error.message;
+  if (downloadRoot) ctx.downloadRoot = downloadRoot;
+
+  const checks = buildDoctorChecks(ctx);
+
+  out(`gmail-mcp-server doctor (v${VERSION})`);
+  for (const check of checks) {
+    const mark = check.status === 'ok' ? 'OK  ' : check.status === 'warn' ? 'WARN' : 'FAIL';
+    out(`  [${mark}] ${check.name}: ${check.detail}`);
+  }
+  return checks.some((check) => check.status === 'fail') ? 1 : 0;
 }
 
 /**

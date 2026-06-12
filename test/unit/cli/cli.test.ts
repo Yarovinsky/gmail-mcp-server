@@ -2,8 +2,17 @@ import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { runCli, VERSION, type CliDeps } from '../../../src/cli.js';
+import {
+  runCli,
+  VERSION,
+  MIN_NODE_MAJOR,
+  buildDoctorChecks,
+  featureScopeMismatches,
+  type CliDeps,
+  type DoctorContext,
+} from '../../../src/cli.js';
 import { parseConfig, defaultConfig } from '../../../src/config/configSchema.js';
+import { Scope } from '../../../src/auth/scopeProfiles.js';
 
 let home: string;
 let cwd: string;
@@ -93,12 +102,136 @@ describe('config show', () => {
   });
 });
 
-describe('doctor (stub)', () => {
-  it('reports node version and config validity', async () => {
+describe('doctor (full §20 checks)', () => {
+  function writeCredentials(): void {
+    const credPath = path.join(home, '.gmail-mcp', 'credentials.json');
+    fs.mkdirSync(path.dirname(credPath), { recursive: true });
+    fs.writeFileSync(
+      credPath,
+      JSON.stringify({ installed: { client_id: 'a', client_secret: 'b' } }),
+      'utf8',
+    );
+  }
+
+  it('fails (exit 1) when OAuth credentials are missing, naming the gap', async () => {
+    const code = await runCli(['doctor'], deps());
+    expect(code).toBe(1);
+    const text = out.join('\n');
+    expect(text).toContain('node');
+    expect(text).toContain('config');
+    expect(text).toContain('credentials');
+    expect(text).toMatch(/FAIL/);
+  });
+
+  it('passes (exit 0, warnings only) once credentials exist but no token yet', async () => {
+    writeCredentials();
     const code = await runCli(['doctor'], deps());
     expect(code).toBe(0);
-    expect(out.join('\n')).toContain('node version');
-    expect(out.join('\n')).toContain('config: OK');
+    const text = out.join('\n');
+    // Token is absent → a warning, not a failure.
+    expect(text).toMatch(/WARN/);
+    expect(text).toContain('auth login');
+  });
+
+  it('runs the full seven-point check list', async () => {
+    writeCredentials();
+    await runCli(['doctor'], deps());
+    const text = out.join('\n');
+    for (const name of [
+      'node',
+      'config',
+      'credentials',
+      'token',
+      'scopes',
+      'downloads',
+      'feature-scopes',
+    ]) {
+      expect(text).toContain(name);
+    }
+  });
+});
+
+describe('buildDoctorChecks (pure §20 logic)', () => {
+  const healthy: DoctorContext = {
+    nodeVersion: `v${MIN_NODE_MAJOR + 4}.0.0`,
+    config: defaultConfig(),
+    credentialsExists: true,
+    tokenExists: true,
+    grantedScopes: [Scope.GmailReadonly],
+    downloadRoot: { enabled: true, path: '/tmp/dl', exists: true, writable: true },
+    featureScopeMismatches: [],
+  };
+
+  it('marks every check ok for a fully-configured context', () => {
+    const checks = buildDoctorChecks(healthy);
+    expect(checks.every((c) => c.status === 'ok')).toBe(true);
+    expect(checks.map((c) => c.name)).toEqual([
+      'node',
+      'config',
+      'credentials',
+      'token',
+      'scopes',
+      'downloads',
+      'feature-scopes',
+    ]);
+  });
+
+  it('fails the node check below the minimum major', () => {
+    const checks = buildDoctorChecks({ ...healthy, nodeVersion: `v${MIN_NODE_MAJOR - 2}.0.0` });
+    expect(checks.find((c) => c.name === 'node')?.status).toBe('fail');
+  });
+
+  it('short-circuits after an invalid config', () => {
+    const checks = buildDoctorChecks({
+      ...healthy,
+      config: null,
+      configError: 'bad value',
+    });
+    expect(checks.map((c) => c.name)).toEqual(['node', 'config']);
+    expect(checks.find((c) => c.name === 'config')?.status).toBe('fail');
+  });
+
+  it('fails when credentials are missing and warns when no token', () => {
+    const checks = buildDoctorChecks({
+      ...healthy,
+      credentialsExists: false,
+      tokenExists: false,
+      grantedScopes: null,
+    });
+    expect(checks.find((c) => c.name === 'credentials')?.status).toBe('fail');
+    expect(checks.find((c) => c.name === 'token')?.status).toBe('warn');
+    expect(checks.find((c) => c.name === 'feature-scopes')?.status).toBe('warn');
+  });
+
+  it('fails the downloads check when the root exists but is not writable', () => {
+    const checks = buildDoctorChecks({
+      ...healthy,
+      downloadRoot: { enabled: true, path: '/root/locked', exists: true, writable: false },
+    });
+    expect(checks.find((c) => c.name === 'downloads')?.status).toBe('fail');
+  });
+
+  it('warns when enabled features are not authorized by granted scopes', () => {
+    const checks = buildDoctorChecks({ ...healthy, featureScopeMismatches: ['search', 'profile'] });
+    const fsCheck = checks.find((c) => c.name === 'feature-scopes');
+    expect(fsCheck?.status).toBe('warn');
+    expect(fsCheck?.detail).toContain('search');
+  });
+});
+
+describe('featureScopeMismatches (§9.3)', () => {
+  it('reports no mismatch when readonly authorizes all default-enabled features', () => {
+    expect(featureScopeMismatches(defaultConfig(), [Scope.GmailReadonly])).toEqual([]);
+  });
+
+  it('flags every scoped enabled feature when no scope is granted', () => {
+    const mismatches = featureScopeMismatches(defaultConfig(), []);
+    expect(mismatches).toContain('search');
+    expect(mismatches).toContain('profile');
+    expect(mismatches).toContain('attachments');
+    // Disabled-by-default write features are not enabled, so never reported.
+    expect(mismatches).not.toContain('drafts');
+    expect(mismatches).not.toContain('send');
   });
 });
 
