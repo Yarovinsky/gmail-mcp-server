@@ -19,6 +19,8 @@ import {
 } from './toolRegistry.js';
 import { internalError, toErrorResponse } from './errors.js';
 import { boundToolResponse } from '../safety/limits.js';
+import { registerResources } from './resources.js';
+import { registerPrompts } from './prompts.js';
 
 /** Default server identity advertised to MCP clients. */
 const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '0.3.0' };
@@ -36,11 +38,15 @@ export function buildMcpServer(options: BuildServerOptions): McpServer {
   const { registry, context } = options;
   const gate = options.gate ?? featureGate(context.config);
   const server = new McpServer(options.serverInfo ?? DEFAULT_SERVER_INFO, {
-    capabilities: { tools: {} },
+    capabilities: { tools: {}, resources: {}, prompts: {} },
   });
   for (const tool of registry.list()) {
     wireTool(server, tool, context, gate);
   }
+  // Optional read-only resources (§11.2) and static prompts (§11.3). Resources reuse the
+  // read tools' gating/safe-defaults; prompts embed no private data.
+  registerResources(server, { registry, context, gate });
+  registerPrompts(server);
   return server;
 }
 
