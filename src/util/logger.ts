@@ -37,7 +37,9 @@ export function createLogger(config: LoggerConfig): Logger {
   if (config.name !== undefined) {
     options.name = config.name;
   }
-  return config.destination ? pino(options, config.destination) : pino(options);
+  // Default to stderr: in stdio transport mode the MCP JSON-RPC protocol owns
+  // stdout, so logs must never be written there.
+  return pino(options, config.destination ?? process.stderr);
 }
 
 /**

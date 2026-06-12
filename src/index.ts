@@ -1,11 +1,17 @@
 #!/usr/bin/env node
 /**
- * gmail-mcp-server entrypoint.
- *
- * This is the executable entrypoint for the Gmail MCP Server CLI. The full CLI
- * and MCP server wiring is added in later implementation steps (see
- * docs/hld/GMAIL_MCP_SERVER_IMPL.md). For now this is an intentionally minimal,
- * buildable stub so the toolchain (build/lint/test) is green from Step 0.1.
+ * gmail-mcp-server executable entrypoint. Parses argv and dispatches to the CLI
+ * (`src/cli.ts`). All command logic lives in `cli.ts` so this file stays a thin
+ * shell that maps the CLI's exit code onto the process.
  */
 
-export {};
+import { runCli } from './cli.js';
+
+runCli(process.argv.slice(2))
+  .then((code) => {
+    process.exitCode = code;
+  })
+  .catch((error: unknown) => {
+    process.stderr.write(`gmail-mcp-server: fatal error: ${String(error)}\n`);
+    process.exitCode = 1;
+  });
