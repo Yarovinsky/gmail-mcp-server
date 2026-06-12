@@ -11,15 +11,20 @@ import type { z } from 'zod';
 import type { Config, FeatureFlag } from '../config/config.js';
 import type { Logger } from '../util/logger.js';
 import type { AppError } from '../util/result.js';
+// Type-only import: `GmailSession` is erased at build time, so this introduces no
+// runtime coupling from the MCP layer to the gmail layer (it only types the context).
+import type { GmailSession } from '../gmail/session.js';
 import { featureDisabledError } from './errors.js';
 
 /**
- * Runtime context handed to every tool handler. Extended in later phases as
- * dependencies (auth, gmail client, audit logger) are introduced.
+ * Runtime context handed to every tool handler. `session` is the authenticated
+ * Gmail session, or `null`/absent when the server is not authenticated — tools
+ * that need the mailbox return `not_authenticated` in that case.
  */
 export interface ToolContext {
   config: Config;
   logger: Logger;
+  session?: GmailSession | null;
 }
 
 /** The JSON object a tool returns: the §11.1/§17 envelope (`{ok:true,…}` | `{ok:false,error}`). */

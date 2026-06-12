@@ -189,14 +189,24 @@ export class OAuthClient {
   }
 
   /**
+   * Return the underlying OAuth2 client with the given token's credentials set.
+   * Used to build an authenticated Gmail API client (the google client refreshes
+   * access tokens on demand when a refresh token is present).
+   */
+  getAuthenticatedClient(token: StoredToken): OAuth2ClientLike {
+    const client = this.make(this.defaultRedirectUri());
+    client.setCredentials(token);
+    return client;
+  }
+
+  /**
    * Fetch the authenticated mailbox's email address via Gmail `users.getProfile`.
    * Used by `auth login` to capture the email for `auth status`. Only meaningful
    * with the real google client; tests inject the email fetcher instead.
    */
   async getProfileEmail(token: StoredToken): Promise<AppResult<string>> {
     try {
-      const client = this.make(this.defaultRedirectUri());
-      client.setCredentials(token);
+      const client = this.getAuthenticatedClient(token);
       const gmail = google.gmail({
         version: 'v1',
         auth: client as unknown as InstanceType<typeof google.auth.OAuth2>,

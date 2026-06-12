@@ -19,9 +19,14 @@ import { createLogger } from './util/logger.js';
 import { buildMcpServer } from './mcp/server.js';
 import { createServerTransport } from './mcp/transport.js';
 import { TokenStore, tokensDirFromTokenPath } from './auth/tokenStore.js';
-import { OAuthClient, loadCredentials } from './auth/oauthClient.js';
+import { OAuthClient, loadCredentials, parseGrantedScopes } from './auth/oauthClient.js';
 import { expandScopeProfile } from './auth/scopeProfiles.js';
 import { authLogin, authLogout, authRevoke, authStatus } from './auth/authCommands.js';
+import { GmailClient, createGmailApi, type GoogleAuthClient } from './gmail/gmailClient.js';
+import type { GmailSession } from './gmail/session.js';
+import { buildToolGate } from './tools/gate.js';
+import type { Config } from './config/config.js';
+import type { Logger } from './util/logger.js';
 
 /** Current CLI/server version. Keep in sync with package.json on release. */
 export const VERSION = '0.1.0';
@@ -170,6 +175,38 @@ function cmdDoctor(deps: CliDeps): number {
   return 1;
 }
 
+/**
+ * Build the authenticated Gmail session for `start`, or `null` when the server is
+ * not yet authenticated / has no credentials. A null session lets the server still
+ * boot and serve `health`; mailbox tools then return `not_authenticated`.
+ */
+function buildSession(config: Config, logger: Logger): GmailSession | null {
+  const credentials = loadCredentials(config.oauth.credentialsPath);
+  if (!credentials.ok) {
+    logger.warn(
+      { reason: credentials.error.message },
+      'No OAuth credentials; Gmail tools will report not_authenticated.',
+    );
+    return null;
+  }
+  const store = new TokenStore({
+    tokensDir: tokensDirFromTokenPath(config.oauth.tokenPath),
+    logger,
+  });
+  const token = store.load(config.activeProfile);
+  if (!token.ok) {
+    logger.warn(
+      { profile: config.activeProfile },
+      'No saved token; run `auth login`. Gmail tools will report not_authenticated.',
+    );
+    return null;
+  }
+  const oauth = new OAuthClient(credentials.value, { logger });
+  const authClient = oauth.getAuthenticatedClient(token.value) as unknown as GoogleAuthClient;
+  const gmail = new GmailClient(createGmailApi(authClient), { logger });
+  return { gmail, grantedScopes: parseGrantedScopes(token.value) };
+}
+
 async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<number> {
   const { err } = resolveDeps(deps);
   const result = loadConfig(loadOptions(deps));
@@ -195,10 +232,15 @@ async function cmdStart(flags: ParsedArgs['flags'], deps: CliDeps): Promise<numb
   }
 
   const logger = createLogger({ level: config.logging.level });
+  const session = buildSession(config, logger);
   const registry = createToolRegistry();
-  const server = buildMcpServer({ registry, context: { config, logger } });
+  const gate = buildToolGate(config, session?.grantedScopes ?? [], session !== null);
+  const server = buildMcpServer({ registry, context: { config, logger, session }, gate });
   await server.connect(transport);
-  logger.info({ transport: kind, tools: registry.size }, 'gmail-mcp-server started');
+  logger.info(
+    { transport: kind, tools: registry.size, authenticated: session !== null },
+    'gmail-mcp-server started',
+  );
 
   // Keep the process alive; the stdio transport drives requests until the client
   // disconnects or the process is signalled.
