@@ -30,7 +30,7 @@ import type { Config } from './config/config.js';
 import type { Logger } from './util/logger.js';
 
 /** Current CLI/server version. Keep in sync with package.json on release. */
-export const VERSION = '0.4.0';
+export const VERSION = '1.0.0';
 
 export interface CliDeps {
   stdout?: (line: string) => void;

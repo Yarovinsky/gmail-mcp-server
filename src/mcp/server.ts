@@ -23,7 +23,7 @@ import { registerResources } from './resources.js';
 import { registerPrompts } from './prompts.js';
 
 /** Default server identity advertised to MCP clients. */
-const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '0.4.0' };
+const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '1.0.0' };
 
 export interface BuildServerOptions {
   registry: ToolRegistry;
