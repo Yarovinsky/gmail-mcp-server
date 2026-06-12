@@ -60,25 +60,7 @@ jobs:
         run: npm run build
 
       - name: Package smoke test
-        shell: bash
-        run: |
-          set -euo pipefail
-          # Pack the publishable tarball (relies on the build above for dist/).
-          tarball="$(npm pack --silent)"
-          echo "Packed: ${tarball}"
-          # Install it into a throwaway project and exercise the installed bin.
-          work="$(mktemp -d)"
-          tarball_abs="$(pwd)/${tarball}"
-          expected="$(node -p "require('./package.json').version")"
-          cd "${work}"
-          npm init -y >/dev/null 2>&1
-          npm install "${tarball_abs}" >/dev/null 2>&1
-          bin="${work}/node_modules/.bin/gmail-mcp-server"
-          got="$("${bin}" --version)"
-          echo "Installed bin reports version: ${got}"
-          test "${got}" = "${expected}"
-          "${bin}" --help | grep -q "gmail-mcp-server"
-          echo "Package smoke test passed."
+        run: npm run smoke
 
   secret-scan:
     name: secret scan

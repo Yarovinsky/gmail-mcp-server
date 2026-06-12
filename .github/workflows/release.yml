@@ -1,0 +1,55 @@
+name: Release
+
+# Publishes the package to npm when a GitHub Release is published (a deliberate,
+# manual action — pushing a tag alone does NOT publish). Requires an `NPM_TOKEN`
+# repository secret with publish rights; without it the publish step fails loudly.
+# Re-runs the full verification before publishing and uploads npm provenance.
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # required for npm provenance (--provenance)
+
+jobs:
+  publish:
+    name: build, test & publish to npm
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          registry-url: 'https://registry.npmjs.org'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Test
+        run: npm test
+        env:
+          GMAIL_MCP_LIVE_TESTS: ''
+
+      - name: Build
+        run: npm run build
+
+      - name: Package smoke test
+        run: npm run smoke
+
+      - name: Publish to npm (with provenance)
+        run: npm publish --provenance --access public
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

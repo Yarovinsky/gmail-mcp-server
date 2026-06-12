@@ -26,4 +26,16 @@ export default tseslint.config(
       '@typescript-eslint/no-explicit-any': 'off',
     },
   },
+  {
+    // Plain Node maintenance scripts (not shipped); give them the Node globals they use.
+    files: ['scripts/**/*.{js,mjs,cjs}'],
+    languageOptions: {
+      globals: {
+        process: 'readonly',
+        console: 'readonly',
+        Buffer: 'readonly',
+        URL: 'readonly',
+      },
+    },
+  },
 );

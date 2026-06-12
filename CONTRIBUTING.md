@@ -19,14 +19,15 @@ resolution — **relative imports must use the `.js` extension** (e.g.
 
 ## Scripts
 
-| Script                                    | What it does                               |
-| ----------------------------------------- | ------------------------------------------ |
-| `npm run build`                           | Type-check and compile to `dist/` (`tsc`). |
-| `npm run typecheck`                       | Type-check only (`tsc --noEmit`).          |
-| `npm run lint`                            | ESLint (zero warnings expected).           |
-| `npm run format` / `npm run format:check` | Prettier write / check.                    |
-| `npm test`                                | Run the full Vitest suite.                 |
-| `npm run test:watch`                      | Vitest in watch mode.                      |
+| Script                                    | What it does                                                      |
+| ----------------------------------------- | ----------------------------------------------------------------- |
+| `npm run build`                           | Type-check and compile to `dist/` (`tsc`).                        |
+| `npm run typecheck`                       | Type-check only (`tsc --noEmit`).                                 |
+| `npm run lint`                            | ESLint (zero warnings expected).                                  |
+| `npm run format` / `npm run format:check` | Prettier write / check.                                           |
+| `npm test`                                | Run the full Vitest suite.                                        |
+| `npm run test:watch`                      | Vitest in watch mode.                                             |
+| `npm run smoke`                           | Pack the tarball and verify the installed `gmail-mcp-server` bin. |
 
 Before opening a PR, make sure **`npm run build`, `npm run lint`, `npm run format:check`,
 and `npm test` are all green.**
