@@ -1,0 +1,96 @@
+name: CI
+
+# Continuous integration for gmail-mcp-server (HLD §23).
+# Pipeline: install -> typecheck -> lint -> format -> unit/integration tests ->
+# build -> package smoke test, plus a secret-scanning job. No real Gmail
+# credentials are ever used, and live Gmail tests never run here (§22.3).
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+
+# Least privilege: jobs only need to read the repository contents.
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: build & test (Node ${{ matrix.node }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node: ['18', '20', '22']
+    env:
+      # Belt and suspenders: ensure live Gmail tests stay opt-in only (§22.3).
+      GMAIL_MCP_LIVE_TESTS: ''
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node ${{ matrix.node }}
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Typecheck
+        run: npm run typecheck
+
+      - name: Lint
+        run: npm run lint
+
+      - name: Format check
+        run: npm run format:check
+
+      - name: Unit + integration tests
+        run: npm test
+
+      - name: Build
+        run: npm run build
+
+      - name: Package smoke test
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Pack the publishable tarball (relies on the build above for dist/).
+          tarball="$(npm pack --silent)"
+          echo "Packed: ${tarball}"
+          # Install it into a throwaway project and exercise the installed bin.
+          work="$(mktemp -d)"
+          tarball_abs="$(pwd)/${tarball}"
+          expected="$(node -p "require('./package.json').version")"
+          cd "${work}"
+          npm init -y >/dev/null 2>&1
+          npm install "${tarball_abs}" >/dev/null 2>&1
+          bin="${work}/node_modules/.bin/gmail-mcp-server"
+          got="$("${bin}" --version)"
+          echo "Installed bin reports version: ${got}"
+          test "${got}" = "${expected}"
+          "${bin}" --help | grep -q "gmail-mcp-server"
+          echo "Package smoke test passed."
+
+  secret-scan:
+    name: secret scan
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          # Full history so the scanner can inspect every commit on a push/PR.
+          fetch-depth: 0
+
+      - name: Run gitleaks
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
