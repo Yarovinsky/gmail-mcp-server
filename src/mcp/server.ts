@@ -18,6 +18,7 @@ import {
   featureGate,
 } from './toolRegistry.js';
 import { internalError, toErrorResponse } from './errors.js';
+import { boundToolResponse } from '../safety/limits.js';
 
 /** Default server identity advertised to MCP clients. */
 const DEFAULT_SERVER_INFO = { name: 'gmail-mcp-server', version: '0.1.0' };
@@ -62,7 +63,7 @@ function wireTool(server: McpServer, tool: AnyTool, context: ToolContext, gate: 
     },
     async (args: Record<string, unknown>): Promise<CallToolResult> => {
       const result = await runTool(tool, args, context, gate);
-      return toCallToolResult(result);
+      return toCallToolResult(result, context.config.limits.toolResponseBodyCharLimit);
     },
   );
 }
@@ -84,11 +85,16 @@ async function runTool(
   }
 }
 
-/** Convert a tool's JSON result into an MCP `CallToolResult`. */
-function toCallToolResult(result: ToolResultObject): CallToolResult {
+/**
+ * Convert a tool's JSON result into an MCP `CallToolResult`, bounding the
+ * serialized size to `toolResponseBodyCharLimit` (§11.1). The bounded envelope is
+ * used for both the text content and the structured content so they stay in sync.
+ */
+function toCallToolResult(result: ToolResultObject, limit: number): CallToolResult {
+  const bounded = boundToolResponse(result, limit);
   return {
-    content: [{ type: 'text', text: JSON.stringify(result) }],
-    structuredContent: result,
-    isError: result.ok === false,
+    content: [{ type: 'text', text: bounded.serialized }],
+    structuredContent: bounded.result,
+    isError: bounded.result.ok === false,
   };
 }

@@ -4,6 +4,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { buildMcpServer } from '../../src/mcp/server.js';
 import { ToolRegistry, defineTool } from '../../src/mcp/toolRegistry.js';
+import { createToolRegistry } from '../../src/tools/index.js';
 import { defaultConfig } from '../../src/config/configSchema.js';
 import { createSilentLogger } from '../../src/util/logger.js';
 
@@ -67,6 +68,23 @@ describe('MCP server over in-memory transport', () => {
     expect(result.structuredContent).toMatchObject({
       ok: false,
       error: { code: 'feature_disabled' },
+    });
+    await client.close();
+  });
+});
+
+describe('health tool (real registry)', () => {
+  it('is listed and callable over the MCP transport', async () => {
+    const client = await connectClient(createToolRegistry());
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name)).toContain('health');
+
+    const result = await client.callTool({ name: 'health', arguments: {} });
+    expect(result.isError).toBeFalsy();
+    expect(result.structuredContent).toMatchObject({
+      ok: true,
+      status: 'ok',
+      server: 'gmail-mcp-server',
     });
     await client.close();
   });
