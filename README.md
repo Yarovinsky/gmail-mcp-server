@@ -40,7 +40,7 @@ No raw Gmail API passthrough tool is provided, by design.
 
 ## Requirements
 
-- Node.js >= 18
+- Node.js >= 20
 - A Google Cloud project with the Gmail API enabled and **OAuth Desktop App** credentials
 
 ## Install

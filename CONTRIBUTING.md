@@ -13,7 +13,7 @@ npm run build
 npm test
 ```
 
-Requirements: Node.js >= 18. The project is ESM TypeScript with `NodeNext` module
+Requirements: Node.js >= 20. The project is ESM TypeScript with `NodeNext` module
 resolution — **relative imports must use the `.js` extension** (e.g.
 `import { ok } from './util/result.js'`).
 

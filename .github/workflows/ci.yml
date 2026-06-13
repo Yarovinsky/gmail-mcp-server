@@ -27,7 +27,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node: ['18', '20', '22']
+        node: ['20', '22', '24']
     env:
       # Belt and suspenders: ensure live Gmail tests stay opt-in only (§22.3).
       GMAIL_MCP_LIVE_TESTS: ''

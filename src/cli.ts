@@ -167,7 +167,7 @@ function cmdConfig(sub: string | undefined, flags: ParsedArgs['flags'], deps: Cl
 }
 
 /** The minimum supported Node major version (kept in sync with package.json engines). */
-export const MIN_NODE_MAJOR = 18;
+export const MIN_NODE_MAJOR = 20;
 
 /** A single `doctor` diagnostic result. `fail` makes `doctor` exit non-zero. */
 export type DoctorStatus = 'ok' | 'warn' | 'fail';
