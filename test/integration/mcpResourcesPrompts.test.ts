@@ -81,7 +81,7 @@ describe('MCP resources (§11.2)', () => {
     expect(result.contents).toHaveLength(1);
     const content = result.contents[0];
     expect(content.mimeType).toBe('application/json');
-    const parsed = JSON.parse(content.text as string);
+    const parsed = JSON.parse((content as { text: string }).text);
     expect(parsed).toMatchObject({ ok: true, profile: { emailAddress: 'me@example.com' } });
     await client.close();
   });
@@ -89,7 +89,7 @@ describe('MCP resources (§11.2)', () => {
   it('reads a templated message resource via its id', async () => {
     const client = await connect(true);
     const result = await client.readResource({ uri: 'gmail://message/m123' });
-    const parsed = JSON.parse(result.contents[0].text as string);
+    const parsed = JSON.parse((result.contents[0] as { text: string }).text);
     expect(parsed).toMatchObject({ ok: true, message: { id: 'm123' } });
     await client.close();
   });
@@ -97,7 +97,7 @@ describe('MCP resources (§11.2)', () => {
   it('surfaces not_authenticated through the resource when there is no session', async () => {
     const client = await connect(false);
     const result = await client.readResource({ uri: 'gmail://profile' });
-    const parsed = JSON.parse(result.contents[0].text as string);
+    const parsed = JSON.parse((result.contents[0] as { text: string }).text);
     expect(parsed).toMatchObject({ ok: false, error: { code: 'not_authenticated' } });
     await client.close();
   });

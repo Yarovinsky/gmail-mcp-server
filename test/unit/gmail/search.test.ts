@@ -95,7 +95,7 @@ describe('searchMessages (§12.3, §18)', () => {
     if (!result.ok) return;
     expect(spy.getCalls).toBe(2);
 
-    const first = result.value.messages[0] as Record<string, unknown>;
+    const first = result.value.messages[0] as unknown as Record<string, unknown>;
     expect(Object.keys(first).sort()).toEqual(
       ['hasAttachments', 'headers', 'id', 'internalDate', 'labelIds', 'snippet', 'threadId'].sort(),
     );
@@ -109,7 +109,7 @@ describe('searchMessages (§12.3, §18)', () => {
     const result = await searchMessages(makeClient(spy), { ...baseInput, format: 'metadata' });
     expect(result.ok).toBe(true);
     if (!result.ok) return;
-    const first = result.value.messages[0] as { headers: Record<string, unknown> };
+    const first = result.value.messages[0] as unknown as { headers: Record<string, unknown> };
     expect(Object.keys(first.headers).sort()).toEqual(['date', 'from', 'subject', 'to']);
     expect(first.headers.to).toBe('user@example.com');
     expect(first.headers.from).toBe('sender@example.com');

@@ -61,8 +61,9 @@ async function clientFor(config: Config, captured: Captured): Promise<Client> {
   );
 }
 
-function errorCode(result: { structuredContent?: unknown }): string {
-  return (result.structuredContent as { error: { code: string } }).error.code;
+function errorCode(result: unknown): string {
+  return (result as { structuredContent: { error: { code: string } } }).structuredContent.error
+    .code;
 }
 
 describe('gmail_trash_messages (§12.15, §16.3)', () => {

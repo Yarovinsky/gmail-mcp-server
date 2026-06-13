@@ -60,8 +60,9 @@ async function clientFor(config: Config, captured: Captured): Promise<Client> {
   );
 }
 
-function errorCode(result: { structuredContent?: unknown }): string {
-  return (result.structuredContent as { error: { code: string } }).error.code;
+function errorCode(result: unknown): string {
+  return (result as { structuredContent: { error: { code: string } } }).structuredContent.error
+    .code;
 }
 
 describe('gmail_modify_message_labels (§12.14, §16.3)', () => {
